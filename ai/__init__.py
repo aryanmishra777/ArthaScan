@@ -1,0 +1,1 @@
+"""AI formatting package."""
