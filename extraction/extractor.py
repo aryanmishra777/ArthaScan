@@ -191,7 +191,7 @@ def transform_extracted_data(extracted_data: dict[str, Any]) -> list[dict[str, A
     transformed: list[dict[str, Any]] = []
 
     for fund in result.funds:
-        enrichment = DEMO_FUND_ENRICHMENT.get(_normalize_fund_name(fund.fund_name), {})
+        enrichment = _fuzzy_enrich(_normalize_fund_name(fund.fund_name))
         transactions = [
             {"date": transaction.date, "amount": transaction.amount}
             for transaction in fund.transactions
@@ -211,7 +211,7 @@ def transform_extracted_data(extracted_data: dict[str, Any]) -> list[dict[str, A
                 "holdings": holdings,
                 "expense_ratio": fund.expense_ratio
                 if fund.expense_ratio is not None
-                else enrichment.get("expense_ratio", _default_expense_ratio(fund.plan_type)),
+                else enrichment.get("expense_ratio", _default_expense_ratio(fund.plan_type, fund.fund_name)),
                 "benchmark_return": enrichment.get("benchmark_return", 12.0),
                 "historical_returns": enrichment.get("historical_returns"),
                 "benchmark_returns": enrichment.get("benchmark_returns"),
@@ -377,12 +377,38 @@ def _resolve_status(maybe_date: str | None, maybe_amount: float | None) -> str:
     return "no_answer"
 
 
-def _default_expense_ratio(plan_type: str | None) -> float:
+def _default_expense_ratio(plan_type: str | None, fund_name: str = "") -> float:
+    name = fund_name.lower()
+    if any(k in name for k in ("index", "nifty", "sensex", "etf", "bees")):
+        return 0.1 if plan_type == "DIRECT" else 0.2
+    if "liquid" in name or "overnight" in name:
+        return 0.1 if plan_type == "DIRECT" else 0.3
     if plan_type == "DIRECT":
         return 0.6
     if plan_type == "REGULAR":
         return 1.5
     return 1.0
+
+
+def _fuzzy_enrich(normalized_name: str) -> dict[str, Any]:
+    best_score = 0.0
+    best_match: str | None = None
+    name_words = set(normalized_name.split())
+    if not name_words:
+        return {}
+
+    for key in DEMO_FUND_ENRICHMENT:
+        key_words = set(key.replace("(", "").replace(")", "").split())
+        if not key_words:
+            continue
+        score = len(key_words & name_words) / len(key_words)
+        if score > best_score:
+            best_score = score
+            best_match = key
+
+    if best_score >= 0.70 and best_match:
+        return DEMO_FUND_ENRICHMENT[best_match]
+    return {}
 
 
 def _normalize_fund_name(name: str) -> str:

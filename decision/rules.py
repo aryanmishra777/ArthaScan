@@ -95,10 +95,14 @@ def evaluate_portfolio(metrics: dict[str, Any]) -> dict[str, Any]:
             issues = ["High Fees"]
             confidence = "HIGH"
 
+    final_confidence = "LOW" if missing_data and action == "KEEP" else confidence
+    if metrics.get("portfolio_metrics", {}).get("is_demo"):
+        final_confidence = "LOW (Demo Mode)"
+
     return {
         "action": action,
         "issues": issues[:2],
-        "confidence": "LOW" if missing_data and action == "KEEP" else confidence,
+        "confidence": final_confidence,
         "portfolio_issues": top_issues[:2],
         "primary_fund": primary["fund_name"] if primary else None,
         "fund_decisions": fund_decisions,

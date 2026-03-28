@@ -16,6 +16,7 @@ def build_demo_finance_output() -> dict:
             "average_expense_ratio": DEMO_DATA["expense_ratio"],
             "max_portfolio_overlap": DEMO_DATA["overlap"],
             "health_score": 10,
+            "is_demo": True,
             "top_issues": [
                 "CRITICAL_OVERLAP",
                 "HIGH_EXPENSE_DRAG",

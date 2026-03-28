@@ -176,9 +176,8 @@ def _extract_single_page(
                 except Exception:
                     raw_text = json.dumps(repaired)
 
-        logger.warning("All repair attempts failed for page %d", page_index + 1)
-        # Return best-effort parsed even if not validated
-        return parsed if parsed.get("funds") else None
+        logger.warning("Final validation failed for page %d after all repairs, returning None", page_index + 1)
+        return None
 
     except Exception as exc:
         logger.warning("Vision extraction failed for page %d: %s", page_index + 1, exc)

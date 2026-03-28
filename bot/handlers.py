@@ -54,6 +54,10 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def chat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get("pending_pdf"):
+        await _handle_pdf_password(update, context)
+        return
+
     language = context.user_data.get("language", context.bot_data.get("default_language", "english"))
     metrics = context.user_data.get("analysis_metrics")
     decision_output = context.user_data.get("decision_output")
@@ -77,6 +81,36 @@ async def chat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
 
 
+async def _handle_pdf_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    password = (update.effective_message.text or "").strip()
+    pdf_path = context.user_data.get("pending_pdf")
+    if not pdf_path or not Path(pdf_path).exists():
+        context.user_data.pop("pending_pdf", None)
+        await update.effective_message.reply_text("Session expired. Please upload your PDF again.")
+        return
+
+    import fitz
+    try:
+        doc = fitz.open(pdf_path)
+        if not doc.authenticate(password):
+            doc.close()
+            await update.effective_message.reply_text("Incorrect password. Please try again or upload a new PDF.")
+            return
+
+        decrypted_path = str(pdf_path).replace(".pdf", "_decrypted.pdf")
+        doc.save(decrypted_path, encryption=fitz.PDF_ENCRYPT_NONE)
+        doc.close()
+        
+        safe_delete(pdf_path)
+        context.user_data.pop("pending_pdf", None)
+        
+        await _execute_portfolio_analysis(update, context, Path(decrypted_path))
+    except Exception:
+        context.user_data.pop("pending_pdf", None)
+        safe_delete(pdf_path)
+        await update.effective_message.reply_text("Failed to unlock PDF. Please upload an unencrypted file.")
+
+
 async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     document = update.effective_message.document
     if document is None:
@@ -94,6 +128,29 @@ async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     tmp_dir = ensure_tmp_dir()
     temp_pdf = tmp_dir / f"{uuid.uuid4()}.pdf"
+    
+    telegram_file = await document.get_file()
+    await telegram_file.download_to_drive(custom_path=str(temp_pdf))
+
+    import fitz
+    try:
+        doc = fitz.open(str(temp_pdf))
+        if doc.is_encrypted:
+            context.user_data["pending_pdf"] = str(temp_pdf)
+            doc.close()
+            await update.effective_message.reply_text(
+                "🔒 Aapka statement password-protected hai.\n"
+                "Apna PAN number bhejo (e.g. ABCDE1234F) to unlock it."
+            )
+            return
+        doc.close()
+    except Exception:
+        pass
+
+    await _execute_portfolio_analysis(update, context, temp_pdf)
+
+
+async def _execute_portfolio_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE, temp_pdf: Path) -> None:
     stop_event = asyncio.Event()
     progress_message = await update.effective_message.reply_text(STAGE_MESSAGES[0])
 
@@ -101,8 +158,6 @@ async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     progress_task = asyncio.create_task(_progress_indicator(progress_message, stop_event))
 
     try:
-        telegram_file = await document.get_file()
-        await telegram_file.download_to_drive(custom_path=str(temp_pdf))
         metrics, used_demo = await _run_pipeline(temp_pdf)
     except Exception:
         used_demo = True
@@ -123,7 +178,8 @@ async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         if used_demo:
             await update.effective_message.reply_text(
-                "Could not process the file reliably, using demo data for a safe analysis.",
+                "⚠️ Could not extract your portfolio reliably. "
+                "Showing demo analysis — upload a clearer PDF for accurate results.",
                 reply_markup=create_result_keyboard(language),
             )
 
@@ -145,7 +201,8 @@ async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         with contextlib.suppress(BadRequest):
             await progress_message.edit_text("Analysis complete.")
         await update.effective_message.reply_text(
-            "The live analysis ran into a problem, so I switched to demo-safe data.",
+            "⚠️ Could not extract your portfolio reliably. "
+            "Showing demo analysis — upload a clearer PDF for accurate results.",
             reply_markup=create_result_keyboard(language),
         )
         await update.effective_message.reply_text(

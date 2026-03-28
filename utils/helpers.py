@@ -240,6 +240,7 @@ def _register_report_fonts(pdfmetrics, TTFont) -> tuple[str, str]:
     candidates = [
         ("Arial", "C:/Windows/Fonts/arial.ttf", "Arial-Bold", "C:/Windows/Fonts/arialbd.ttf"),
         ("Calibri", "C:/Windows/Fonts/calibri.ttf", "Calibri-Bold", "C:/Windows/Fonts/calibrib.ttf"),
+        ("LiberationSans", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", "LiberationSans-Bold", "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"),
     ]
     for base_name, base_path, bold_name, bold_path in candidates:
         if Path(base_path).exists() and Path(bold_path).exists():
